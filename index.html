@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management System</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #4a5568;
+            margin-bottom: 30px;
+        }
+        .form-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+        .form-section h2 {
+            margin-top: 0;
+            color: #2d3748;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #4a5568;
+        }
+        input[type="text"], input[type="email"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        button {
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #5a67d8;
+        }
+        .message {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+        .error {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 1px solid #fc8181;
+        }
+        .user-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e6fffa;
+            border-radius: 4px;
+            border: 1px solid #81e6d9;
+        }
+        .logout-btn {
+            background: #e53e3e;
+            margin-left: 10px;
+        }
+        .logout-btn:hover {
+            background: #c53030;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>User Management System</h1>
+        
+        <div id="loginSection" class="form-section">
+            <h2>Sign In</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="loginUsername">Username:</label>
+                    <input type="text" id="loginUsername" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password:</label>
+                    <input type="password" id="loginPassword" name="password" required>
+                </div>
+                <button type="submit">Sign In</button>
+            </form>
+            <div id="loginMessage" class="message"></div>
+        </div>
+
+        <div id="registerSection" class="form-section">
+            <h2>Register</h2>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="regUsername">Username:</label>
+                    <input type="text" id="regUsername" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="regEmail">Email:</label>
+                    <input type="email" id="regEmail" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="regPassword">Password:</label>
+                    <input type="password" id="regPassword" name="password" required>
+                </div>
+                <button type="submit">Register</button>
+            </form>
+            <div id="registerMessage" class="message"></div>
+        </div>
+
+        <div id="userSection" class="form-section" style="display: none;">
+            <h2>Welcome!</h2>
+            <div id="userInfo" class="user-info"></div>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </div>
+    </div>
+
+    <script>
+        // Check if user is already logged in
+        const sessionToken = localStorage.getItem('sessionToken');
+        if (sessionToken) {
+            checkSession();
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                username: formData.get('username'),
+                password: formData.get('password')
+            };
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                const msgDiv = document.getElementById('loginMessage');
+                
+                if (response.ok) {
+                    localStorage.setItem('sessionToken', result.session_token);
+                    showMessage(msgDiv, result.message, 'success');
+                    setTimeout(() => {
+                        showUserSection(result.user);
+                    }, 1000);
+                } else {
+                    showMessage(msgDiv, result.message, 'error');
+                }
+            } catch (error) {
+                showMessage(document.getElementById('loginMessage'), 'Network error', 'error');
+            }
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                username: formData.get('username'),
+                email: formData.get('email'),
+                password: formData.get('password')
+            };
+
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                const msgDiv = document.getElementById('registerMessage');
+                
+                if (response.ok) {
+                    showMessage(msgDiv, result.message, 'success');
+                    document.getElementById('registerForm').reset();
+                } else {
+                    showMessage(msgDiv, result.message, 'error');
+                }
+            } catch (error) {
+                showMessage(document.getElementById('registerMessage'), 'Network error', 'error');
+            }
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+
+        function showMessage(element, message, type) {
+            element.textContent = message;
+            element.className = `message ${type}`;
+            element.style.display = 'block';
+            setTimeout(() => {
+                element.style.display = 'none';
+            }, 3000);
+        }
+
+        function showUserSection(user) {
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('registerSection').style.display = 'none';
+            document.getElementById('userSection').style.display = 'block';
+            
+            document.getElementById('userInfo').innerHTML = `
+                <strong>Username:</strong> ${user.username}<br>
+                <strong>Email:</strong> ${user.email}<br>
+                <strong>Visit Count:</strong> ${user.visit_count}<br>
+                <strong>Member Since:</strong> ${user.created_at}<br>
+                <strong>Last Login:</strong> ${user.last_login || 'First time!'}
+            `;
+        }
+
+        function hideUserSection() {
+            document.getElementById('loginSection').style.display = 'block';
+            document.getElementById('registerSection').style.display = 'block';
+            document.getElementById('userSection').style.display = 'none';
+        }
+
+        async function checkSession() {
+            try {
+                const response = await fetch('/profile', {
+                    headers: {
+                        'Authorization': `Bearer ${sessionToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const user = await response.json();
+                    showUserSection(user);
+                } else {
+                    localStorage.removeItem('sessionToken');
+                }
+            } catch (error) {
+                localStorage.removeItem('sessionToken');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('sessionToken');
+            hideUserSection();
+        }
+    </script>
+</body>
+</html>
