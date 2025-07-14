@@ -3,15 +3,17 @@
 #include <drogon/HttpResponse.h>
 #include <drogon/utils/Utilities.h>
 #include <sqlite_orm/sqlite_orm.h>
-#include <random>
-#include <sstream>
 #include <unordered_map>
 #include <chrono>
 #include <mutex>
+#include <jwt-cpp/jwt.h>
+#include "Bcrypt.cpp/include/bcrypt.h"
 
 using namespace drogon;
 using namespace std::chrono_literals;
 using namespace sqlite_orm; 
+
+const std::string JWT_SECRET = "secret_key";
 
 struct User {
     int32_t id;
@@ -132,19 +134,17 @@ Task<HttpResponsePtr> rateLimitMiddleware(HttpRequestPtr req, std::function<Task
 }
 
 std::string hashPassword(const std::string& password) {
-    return drogon::utils::getMd5(password + "salt_secret_key");
+    return bcrypt::generateHash(password, 10);;
 }
 
-std::string generateSessionToken() {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 15);
-    
-    std::stringstream ss;
-    for (int32_t i = 0; i < 32; ++i) {
-        ss << std::hex << dis(gen);
-    }
-    return ss.str();
+std::string generateSessionToken(const std::string& username) {
+        return jwt::create()
+            .set_issuer("auth0")
+            .set_type("JWT")
+            .set_payload_claim("username", jwt::claim(username))
+            .set_issued_at(std::chrono::system_clock::now())
+            .set_expires_at(std::chrono::system_clock::now() + std::chrono::hours{24})
+            .sign(jwt::algorithm::hs256{JWT_SECRET});
 }
 
 Task<void> initializeDatabase() {
@@ -181,25 +181,21 @@ Task<HttpResponsePtr> loginHandler(HttpRequestPtr req) {
 
         std::string username = (*json)["username"].asString();
         std::string password = (*json)["password"].asString();
-        std::string passwordHash = hashPassword(password);
 
         std::vector<User> users = co_await [&]() -> Task<std::vector<User>> {
-            co_return storage->get_all<User>(
-                where(is_equal(&User::username, username) and 
-                      is_equal(&User::password_hash, passwordHash)),
-                limit(1)
-            );
+          co_return storage->get_all<User>(
+              where(is_equal(&User::username, username)), limit(1));
         }();
 
-        if (users.empty()) {
-            Json::Value response;
-            response["message"] = "Invalid username or password";
-            HttpResponsePtr resp = HttpResponse::newHttpJsonResponse(response);
-            resp->setStatusCode(k401Unauthorized);
-            co_return resp;
+        if (users.empty() || !bcrypt::validatePassword(password, users.at(0).password_hash)) {
+          Json::Value response;
+          response["message"] = "Invalid username or password";
+          HttpResponsePtr resp = HttpResponse::newHttpJsonResponse(response);
+          resp->setStatusCode(k401Unauthorized);
+          co_return resp;
         }
 
-        User& user = users[0];
+        User &user = users.at(0);
 
         std::string currentTime = trantor::Date::now().toFormattedString("%Y-%m-%d %H:%M:%S");
         co_await [&]() -> Task<void> {
@@ -211,7 +207,7 @@ Task<HttpResponsePtr> loginHandler(HttpRequestPtr req) {
             co_return;
         }();
 
-        std::string sessionToken = generateSessionToken();
+        std::string sessionToken = generateSessionToken(users.at(0).username);
         std::string expiresAt = trantor::Date::now().after(24 * 3600).toFormattedString("%Y-%m-%d %H:%M:%S");
         
         UserSession session{0, sessionToken, username, currentTime, expiresAt};
@@ -302,7 +298,8 @@ Task<HttpResponsePtr> registerHandler(HttpRequestPtr req) {
 
 Task<HttpResponsePtr> profileHandler(HttpRequestPtr req) {
     std::string authHeader = req->getHeader("authorization");
-    if (authHeader.empty() || authHeader.substr(0, 7) != "Bearer ") {
+
+    if (authHeader.empty() || !authHeader.starts_with("Bearer ")) {
         Json::Value response;
         response["message"] = "Unauthorized";
         HttpResponsePtr resp = HttpResponse::newHttpJsonResponse(response);
@@ -409,7 +406,7 @@ int32_t main() {
     app().setDocumentRoot("./");
     
     app().setLogLevel(trantor::Logger::kInfo)
-         .addListener("192.168.0.13", 5000)
+         .addListener("YOUR_IP", 5000)
          .setThreadNum(4)
          .run();
 }
